@@ -1,2 +1,2 @@
 # notes
-study notes
+Just Personal Study Notes
