@@ -357,3 +357,376 @@ class Atomic6 {
     }
 }
 ```
+
+
+
+## ThreadLocal
+
+
+
+## ConcurrentHashMap
+
+ConcurrentHashMap在jdk1.8中的存储结构，它是由数据，单项链表，红黑树来构成，当我们去初始化一个ConcurrentHashMap实例的时候，默认会初始化一个**长度等于16**的数组，由于ConcurrentHashMap它的核心仍然是Hash表，所以必然会存在Hash冲突的问题，所以ConcurrentHashMap采用链式寻址的方式，来解决Hash表的冲突，当Hash冲突比较多的时候，会造成链表长度较长的问题，这种会使得ConcurrentHashMap中的一个数组元素的查询复杂度会增加，所以在jdk1.8里面，引入了红黑树的机制，当**数组长度大于64**并且**链表长度大于等于8**的时候，单向链表会转化成红黑树，另外随着ConcurrentHashMap的一个动态扩容（负载因子默认为0.75），一旦链表的长度小于8，红黑树会退化成单向链表
+
+![](./img/ConcurrentHashMap01.jpg)
+
+源码解析：
+
+https://www.cnblogs.com/zhaojj/p/8942647.html
+
+
+
+扩容时hash地址计算方法：
+
+https://blog.csdn.net/zl1zl2zl3/article/details/88410963
+
+
+
+## ReentrantLock
+
+一种可重入互斥锁，其基本行为和语义与使用同步方法和语句访问的隐式监视器锁相同，但具有扩展功能。
+
+ ReentrantLock 由上次成功锁定但尚未解锁的线程拥有。当锁不被另一个线程拥有时，调用锁的线程将返回，成功获取锁。如果当前线程已经拥有锁，该方法将立即返回。这可以使用方法 isHeldByCurrentThread 和 getHoldCount 进行检查。
+
+此类的构造函数接受一个可选的公平参数。当设置为 true 时，在争用情况下，锁有利于授予对等待时间最长的线程的访问权限。否则，此锁不保证任何特定的访问顺序。使用由许多线程访问的公平锁的程序可能会显示出比使用默认设置的程序更低的整体吞吐量（即，更慢；通常要慢得多），但在获取锁和保证不会出现饥饿的情况下具有较小的时间差异。但是请注意，锁的公平性并不能保证线程调度的公平性。因此，使用公平锁的许多线程之一可能会连续多次获得它，而其他活动线程没有进展并且当前没有持有锁。另请注意，不定时的 tryLock() 方法不遵守公平设置。如果锁可用，即使其他线程正在等待，它也会成功。
+
+
+
+相对于synchronized的区别：
+
+- 可中断
+- 可设置超时时间
+- 可设置为公平锁
+- 支持多个条件变量
+
+两者都支持可重入
+
+
+
+可重入：是指同一个线程如果首次获得了这把锁，那么因为他是这把锁的拥有者，因此有权利再次拥有这把锁，如果是不可重入锁，那么第二次获得锁时，也不能再次获取到锁。
+
+基本使用：
+
+```java
+class Atomic7{
+    static ReentrantLock lock = new ReentrantLock();
+    public static void main(String[] args) {
+        lock.lock();
+        try {
+            // 如果没获取到锁，则不会进入m1(),进入了则证明可重入
+            m1();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public static void m1(){
+        lock.lock();
+        try {
+            System.out.println("进入m1方法");
+            // 如果没获取到锁，则不会进入m2(),进入了则证明可重入
+            m2();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public static void m2(){
+        lock.lock();
+        try {
+            System.out.println("进入m2方法");
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+
+
+**中断锁**
+
+lock.lock() 不能被中断。synchronized也不能被中断，可以通过ReentrantLock 的**lockInterruptibly()**方法加锁，用**interrupt()**进行中断。
+
+```java
+class Atomic8{
+    private static ReentrantLock lock = new ReentrantLock();
+    public static void main(String[] args) {
+        Thread thread1 = new Thread(() -> {
+            try {
+                //如果没有获取到锁，就进入阻塞队列，可以被其他进程用interrupt中断
+                System.out.println("尝试获取锁");
+                lock.lockInterruptibly();// 可以打断
+//                lock.lock();//不会被中断，会一直阻塞
+            } catch (Exception e){
+                e.printStackTrace();
+                System.out.println("没有获取到锁");
+                return;
+            }
+            try {
+                System.out.println("获取到锁");
+            } finally {
+                lock.unlock();
+            }
+        },"thread1");
+        lock.lock();
+        thread1.start();
+        for (int i = 0; i < 5; i++) {
+            if(i == 4){
+                System.out.println("中断");
+                thread1.interrupt();//中断
+            }
+        }
+    }
+}
+```
+
+
+
+**锁超时**
+
+尝试获取锁：tryLock()
+
+```java
+class Atomic9{
+    private static ReentrantLock lock = new ReentrantLock();
+    public static void main(String[] args) {
+        Thread thread1 = new Thread(() -> {
+            System.out.println("thread1:尝试获取锁");
+            if(! lock.tryLock()) {//main线程获取到了锁后，尝试获取锁失败
+                System.out.println("thread1:没有获取到锁");
+                return;
+            }
+            try {
+                System.out.println("thread1:获取到锁");
+            } finally {
+                lock.unlock();
+            }
+        },"thread1");
+        lock.lock();//main线程获取到了锁
+        System.out.println("main:获取到锁");
+        
+        thread1.start();
+    }
+}
+```
+
+设置超时时间：
+
+```java
+class Atomic10{
+    private static ReentrantLock lock = new ReentrantLock();
+    public static void main(String[] args) {
+        Thread thread1 = new Thread(() -> {
+            System.out.println("thread1:尝试获取锁");
+
+            try {
+                if(! lock.tryLock(1,TimeUnit.SECONDS)) {//如果1s内获取到了锁，则返回true
+                    System.out.println("thread1:没有获取到锁");
+                    return;
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                System.out.println("thread1:没有获取到锁");
+            }
+            try {
+                System.out.println("thread1:获取到锁");
+            } finally {
+                lock.unlock();
+            }
+        },"thread1");
+        lock.lock();
+        System.out.println("main:获取到锁");
+//        System.out.println("main:释放了锁");
+//        lock.unlock();
+        thread1.start();
+    }
+}
+```
+
+
+
+**条件变量**：
+
+ReentrantLock支持用Condition的await()方法让线程进入等待，通过Condition的signal()和signalAll()方法进行唤醒。
+
+使用流程：
+
+- await前需要获得锁
+- await执行后会释放锁，进入conditionObject等待，类似于synchronized的waitSet（理解为房间、休息室），但它只有一个，而ReentrantLock有多个。
+- await的线程被唤醒（或打断、或超时）后重新竞争锁。
+- 获取lock锁成功后则继续执行。
+
+
+
+```java
+class Atomic11{
+    private static ReentrantLock lock = new ReentrantLock();
+    static Condition hospital = lock.newCondition(); //医院
+    static Condition chamber = lock.newCondition(); //会所
+    static boolean health = false;
+    static boolean money = false;
+    public static void main(String[] args) {
+        new Thread(() -> {
+            lock.lock();
+            try{
+                while(! health){
+                    System.out.println("sick");
+                    try {
+                        hospital.await(); //lock()先获取锁
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                if(health){
+                    System.out.println("healthy");
+                }
+            } finally {
+                lock.unlock();
+            }
+        },"t1").start();
+
+        new Thread(() -> {
+            lock.lock();
+            try{
+                while(!money){
+                    System.out.println("poor");
+                    try {
+                        chamber.await();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                if(money){
+                    System.out.println("rich");
+                }
+            } finally {
+                lock.unlock();
+            }
+        },"t2").start();
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        new Thread(() -> {
+            lock.lock();
+            try{
+                health = true;
+                System.out.println("doctor save you!");
+                hospital.signal(); //唤醒Condition（hospital）中的线程
+            } finally {
+                lock.unlock();
+            }
+        },"t3").start();
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        new Thread(() -> {
+            lock.lock();
+            try{
+                if(health){
+                    money  = true;
+                    System.out.println("rich woman save you!");
+                    chamber.signal();
+                }
+            } finally {
+                lock.unlock();
+            }
+        },"t4").start();
+
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        while(health && money){
+            System.out.println("more happiness");
+            break;
+        }
+    }
+}
+```
+
+
+
+LockSupport的park()、unpark()方法
+
+```java
+class Atomic12{
+    private static boolean flag = false;
+    public static void main(String[] args) {
+        Thread t1 = new Thread(() -> {
+            while(!flag) {
+                LockSupport.park();
+            }
+            System.out.println("再打印t1");
+        });
+
+        Thread t2 = new Thread(() -> {
+            System.out.println("先打印t2");
+            flag = true;
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            LockSupport.unpark(t1);	// 唤醒t1线程
+        });
+
+        t1.start();
+        t2.start();
+    }
+}
+```
+
+应用：
+
+- 互斥：使用synchronized或Lock达到共享资源互斥效果。
+- 同步：使用wait、notify或lock的条件变量来达到线程间通信的作用。
+
+
+
+## Java内存模型
+
+Java内存模型(即Java Memory Model，简称（JMM）本身是一种抽象的概念，是一种规范，并不真实存在，它描述的是一组规则或规范，通过这组规范定义了程序中各个变量（包括实例字段，静态字段和构成数组对象的元素）的访问方式。由于JVM运行程序的实体是线程，而每个线程创建时JVM都会为其创建一个工作内存(有些地方称为栈空间)，用于存储线程私有的数据，而Java内存模型中规定所有变量都存储在主内存，主内存是共享内存区域，所有线程都可以访问，但线程对变量的操作(读取赋值等)必须在工作内存中进行，首先要将变量从主内存拷贝的自己的工作内存空间，然后对变量进行操作，操作完成后再将变量写回主内存，不能直接操作主内存中的变量，工作内存中存储着主内存中的变量副本拷贝，前面说过，工作内存是每个线程的私有数据区域，因此不同的线程间无法访问对方的工作内存，线程间的通信(传值)必须通过主内存来完成。
+
+
+
+JMM 定义了主存、工作内存的抽象概念，底层对应着CPU寄存器、缓存、硬件内存、CPU指令优化等。
+
+主存：所有线程共享的数据，如成员变量、静态成员变量。
+
+工作内存：线程私有的数据，如局部变量。
+
+JMM体现在以下几个方面：
+
+- 原子性：保证指令不受到线程上下文切换的影响
+- 可见性：保证指令不会受CPU缓存的影响
+- 有序性：保证指令不会受CPU指令并行优化的影响
+
+
+
+线程执行过程中，会把主存中的数据读到工作内存中，JIT编译器也会将频繁访问的内容缓存到工作内存的高速缓存中，减少对主存的访问，提高效率，但也导致了缓存一致性的问题，此时可以通过volatile关键字解决。
+
+**volatile**：可以用来修饰成员变量和静态成员变量，它可以避免线程从自己的工作缓存中查找变量的值，必须从主存中去获取变量的值，线程操作volatile变量都是直接操作主存。保证线程操作的可见性。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
